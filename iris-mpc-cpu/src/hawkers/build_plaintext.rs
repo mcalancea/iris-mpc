@@ -182,17 +182,18 @@ mod tests {
             irises.push(irises_);
         }
 
-        let irises = izip!(irises[0].clone(), irises[1].clone())
-            .enumerate()
-            .map(|(id, (left, right))| (0, left, right))
-            .collect();
+        let irises: Vec<(IrisVersionId, IrisCode, IrisCode)> =
+            izip!(irises[0].clone(), irises[1].clone())
+                .enumerate()
+                .map(|(id, (left, right))| (0, left, right))
+                .collect();
 
         let prf_seed = [0u8; 16];
 
-        let (graphs, stores) = plaintext_batch_insert(
+        let (graphs, mut stores) = plaintext_batch_insert(
             Some(graphs.try_into().unwrap()),
             Some(stores.try_into().unwrap()),
-            irises,
+            irises.clone(),
             HnswParams::new(64, 32, 32),
             Some(256),
             0,
@@ -200,6 +201,20 @@ mod tests {
             &prf_seed,
         )
         .await?;
+
+        for eye in irises {
+            let query = Arc::new(eye.1);
+            let result = searcher
+                .search(&mut stores[0], &graphs[0], &query, 1)
+                .await?;
+            assert!(searcher.is_match(&mut stores[0], &[result]).await?);
+
+            let query = Arc::new(eye.2);
+            let result = searcher
+                .search(&mut stores[1], &graphs[1], &query, 1)
+                .await?;
+            assert!(searcher.is_match(&mut stores[1], &[result]).await?);
+        }
 
         assert!(stores[0].storage.data.read().await.points.len() == 512 + 1024);
         assert!(stores[1].storage.data.read().await.points.len() == 512 + 1024);
