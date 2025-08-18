@@ -192,6 +192,10 @@ impl SharedPlaintextStore {
     pub fn new() -> Self {
         Default::default()
     }
+
+    pub async fn len(&self) -> usize {
+        self.storage.read().await.db_size()
+    }
 }
 
 impl From<PlaintextStore> for SharedPlaintextStore {
