@@ -1,19 +1,18 @@
 use std::sync::Arc;
 
 use eyre::Result;
-use iris_mpc_common::{iris_db::iris::IrisCode, IrisSerialId, IrisVectorId, IrisVersionId};
+use iris_mpc_common::{iris_db::iris::IrisCode, IrisVectorId};
 use itertools::{izip, Itertools};
 use tokio::task::JoinSet;
 
 use crate::{
     execution::hawk_main::{
         insert::{self, InsertPlanV},
-        scheduler::Batch,
         BothEyes, STORE_IDS,
     },
     genesis::BatchSize,
     hawkers::plaintext_store::SharedPlaintextStore,
-    hnsw::{graph, GraphMem, HnswSearcher},
+    hnsw::{GraphMem, HnswSearcher},
 };
 
 pub type SharedPlaintextGraphs = BothEyes<GraphMem<SharedPlaintextStore>>;
@@ -32,7 +31,7 @@ pub async fn plaintext_parallel_batch_insert(
     assert!(graphs.is_none() == stores.is_none());
     let graphs = graphs
         .unwrap_or_else(|| [GraphMem::new(), GraphMem::new()])
-        .map(|g| Arc::new(g));
+        .map(Arc::new);
     let stores =
         stores.unwrap_or_else(|| [SharedPlaintextStore::new(), SharedPlaintextStore::new()]);
 
@@ -48,11 +47,11 @@ pub async fn plaintext_parallel_batch_insert(
     let irises_by_side: [Vec<(IrisVectorId, IrisCode)>; 2] = [
         irises
             .iter()
-            .map(|(id, left, _)| (id.clone(), left.clone()))
+            .map(|(id, left, _)| (*id, left.clone()))
             .collect(),
         irises
             .iter()
-            .map(|(id, _, right)| (id.clone(), right.clone()))
+            .map(|(id, _, right)| (*id, right.clone()))
             .collect(),
     ];
 
@@ -66,7 +65,7 @@ pub async fn plaintext_parallel_batch_insert(
         irises_by_side.into_iter()
     ) {
         for batch in &irises.into_iter().enumerate().chunks(batch_size) {
-            let prf_seed = prf_seed.clone();
+            let prf_seed = *prf_seed;
             let mut store = store.clone();
             let graph = graph.clone();
             let searcher = searcher.clone();
@@ -75,7 +74,7 @@ pub async fn plaintext_parallel_batch_insert(
             jobs.spawn({
                 async move {
                     let mut results = Vec::new();
-                    for (index, iris) in batch {
+                    for (_, iris) in batch {
                         let query = Arc::new(iris.1);
                         let vector_id = iris.0;
                         let insertion_layer =
@@ -128,8 +127,8 @@ pub async fn plaintext_parallel_batch_insert(
         // Mocking these because I'm not sure what they're supposed to be
 
         let (ids, plans): (Vec<_>, Vec<_>) = insert_plans.into_iter().unzip();
-        let ids = ids.into_iter().map(|id| Some(id)).collect_vec();
-        let plans = plans.into_iter().map(|plan| Some(plan)).collect_vec();
+        let ids = ids.into_iter().map(Some).collect_vec();
+        let plans = plans.into_iter().map(Some).collect_vec();
 
         // Should be able to take ownership from Arc, as all threads have finished before
         let mut graph = Arc::try_unwrap(graph).unwrap();
